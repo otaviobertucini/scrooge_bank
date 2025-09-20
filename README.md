@@ -1,30 +1,12 @@
 # Project Overview
 
-## How to run the project
-
-Note: since there are no sensitive data on .env file, I committed it on purpose to make it easier to run the project.
-
-- Make sure you have [Node.js v22.*](https://nodejs.org/en/download/) installed.
-- Install Yarn: `npm install --global yarn`
-- Go to the project directory
-- Install dependencies: `yarn`
-- Start the database: `sudo docker-compose -f db-docker-compose.yml up -d`
-- Run database migrations: `npx prisma migrate dev`
-- Seed the database: `npx prisma db seed`
-- Start the development server: `yarn dev`
-
-### Running tests
-
-- Make sure the database is running: `sudo docker-compose -f db-docker-compose.yml up -d`
-- To run the tests, use the command: `yarn test`
-
 ## Basic usage
 
 ### Authentication
 
-This API uses token-based authentication. When a user is created, a unique token is generated and returned in the response. This token must be included in the `Authorization` header of subsequent requests to access protected endpoints as a Bearer token.
+This API uses token-based authentication. When a user is created, a unique token is generated and returned in the response. This token must be included in the `Authorization` header of subsequent requests to access protected endpoints as a Bearer token. Once you create an user, store the returned token in a text file so you can easily access it later.
 
-This is a very simple authentication mechanism and this method was chosen for demonstration purposes and simplicity. In a real-world application, using more secure methods such as OAuth or JWT would be considered.
+This is a very simple authentication mechanism and this method was chosen for demonstration purposes and simplicity. In a real application, using more secure methods such as OAuth or JWT would be considered.
 
 ### Bank Operator
 
@@ -40,7 +22,7 @@ Customers can be created using the `POST /users` endpoint. Each customer will re
 
 Users can only have one open account at a time. Attempting to create a new account while one is already open will result in an error.
 
-When making deposits (`POST /account/deposit`), withdrawals (`POST /account/withdraw`), or transfers (`POST /account/transfer`), the opened account's balance will be updated accordingly. Withdrawals and transfers will fail if there are insufficient funds in the account. 
+When making deposits (`POST /account/deposit`), withdrawals (`POST /account/withdraw`), or transfers (`POST /account/transfer`), the opened account's balance will be updated accordingly. Withdrawals and transfers will fail if there are insufficient funds in the account.
 
 The user does not need to specify the account ID for these operations, as the system automatically uses the authenticated user's open account. This also ensures that users can only perform operations on their own accounts.
 
@@ -48,178 +30,70 @@ Accounts can only be closed if there are no money on them. Attempting to close a
 
 Loans were not implemented in this version of the API due to time constraints, but they could be added in future iterations.
 
-## API Endpoints
+## Self-Directed Story and Assumptions
 
-### Public Endpoints
+### Peer-to-Peer Transfers (POST /account/transfer)
 
-These endpoints can be accessed without authentication.
+Why I chose this story: While deposits and withdrawals are core banking functions, direct transfers are a primary feature of modern banking apps. I was inspired by a feature called "PIX" in Brazil, where users can send money to other accounts by simply informing the recipient's email or phone number and the amount to send.
 
-- **`POST /users`**
-  - **Description:** Creates a new user in the system. It validates the user's email, SSN, and phone number, ensuring they are unique.
-  - **Request Body:**
+User Value: This feature enhances the platform's utility. It transforms the service from a simple money storage box into an interactive financial tool, increasing user engagement and making the product more interesting and useful. Here in Brazil, it is also common for companies to use "PIX" to accept payment from customers and some companies uses it to transfer the salary to employees. Thus, adding this feature adds great value to the API.
 
-    ```json
-    {
-      "email": "user@example.com",
-      "ssn": "123-45-6789",
-      "phone": "1234567890"
-    }
-    ```
+### User Operations are Account-Agnostic
 
-  - **Success Response (201):**
+For deposits, withdrawals, and transfers, the user does not specify an account ID. The system uses the authenticated user's single open account. I made this choice to simplify the API and reduce user error, fulfilling the requirement that a user can only operate on their own account.
 
-    ```json
-    {
-      "user": {
-        "id": 1,
-        "email": "user@example.com",
-        "ssn": "123456789",
-        "phone": "1234567890",
-        "role": "CUSTOMER",
-        "token": "a-unique-token"
-      },
-      "token": "a-unique-token"
-    }
-    ```
+## System Architecture
 
-### Authenticated Endpoints
+I chose a layered architecture for this project, because it allows separating concerns into distinct modules to have maintainability and scalability.
 
-All endpoints below require a valid authentication token sent in the request headers.
+- Entrypoint (`src/index.ts`): This is the main file that starts the Express server, sets up middleware, and starts listening for incoming requests.
+- Routing (`src/routes`): This module defines the API endpoints. It maps HTTP methods and URL paths to specific controller functions. It acts as the front door for all incoming requests.
+- Middleware (`src/middleware.ts`): Middleware functions handle cross-cutting concerns. This includes authentication (`authMiddleware`), authorization (`isOperator`, `isCustomer`), and global error handling (`errorHandlerMiddleware`).
+- Controllers (`src/controllers`): Controllers are responsible for handling the request-response cycle. They receive requests from the router, validate input, call the appropriate services to execute business logic, and format the response to be sent back to the client.
+- Services (`src/services`): This layer contains the core business logic of the application. Services encapsulate the application's use cases and orchestrate operations. They are called by the controllers and interact with the data access layer.
+- Data Access Layer (Prisma): The application uses Prisma ORM to interact with the PostgreSQL database. I chose this since the project is in Typescript and Prisma has native support for it. The database schema is defined in `prisma/schema.prisma`.
 
-#### General Authenticated Routes
+### Request Flow
 
-- **`GET /me`**
-  - **Description:** Fetches the profile information for the currently authenticated user, including their email and details of their open bank account, if they have one.
-  - **Success Response (200):**
+Requests goes through the system as follows:
 
-    ```json
-    {
-      "user": "user@example.com",
-      "account": {
-        "amount": 1000.00,
-        "type": "CHECKING",
-        "status": "OPEN"
-      }
-    }
-    ```
+1. An HTTP request hits an endpoint defined in the route layer.
+2. The request passes through Middleware for authentication and authorization.
+3. The corresponding Controller function is called.
+4. The Controller calls one or more Services to perform the required business operations.
+5. The Service uses the Prisma Client to interact with the database.
+6. If success, the Controller sends a final HTTP response to the client.
+7. If an error occurs, it is caught by the `errorHandlerMiddleware`, which sends a standardized error response.
 
-#### Bank Operator Routes
+## How to run the project
 
-These endpoints are restricted to users with the `OPERATOR` role.
+Note: since there are no sensitive data on .env file, I committed it on purpose to make it easier to run the project.
 
-- **`GET /bank/capital`**
-  - **Description:** Retrieves a breakdown of the bank's total capital. This is calculated as the bank's initial capital plus the sum of all customer account balances.
-  - **Success Response (200):**
+- Make sure you have [Node.js v22.*](https://nodejs.org/en/download/) installed.
+- Install Yarn: `npm install --global yarn`
+- Go to the project directory
+- Install dependencies: `yarn`
+- Start the database: `sudo docker-compose -f db-docker-compose.yml up -d`
+- Run database migrations: `npx prisma migrate dev`
+- Seed the database: `npx prisma db seed`
+- Start the development server: `yarn dev`
 
-    ```json
-    {
-      "totalOnHand": 350000.00,
-      "breakdown": {
-        "initialCapital": 250000.00,
-        "totalCustomerDeposits": 100000.00
-      }
-    }
-    ```
+The list of endpoints can be found in [src/endpoints.md](src/endpoints.md).
 
-#### Customer Routes
+### Running tests
 
-These endpoints are restricted to users with the `CUSTOMER` role.
+- Make sure the database is running: `sudo docker-compose -f db-docker-compose.yml up -d`
+- To run the tests, use the command: `yarn test`
 
-- **`POST /accounts`**
-  - **Description:** Creates a new bank account for the authenticated user. A user cannot have more than one open account at a time.
-  - **Request Body:**
+#### Endpoints Under Test
 
-    ```json
-    {
-      "type": "CHECKING"
-    }
-    ```
+The tests were concentrated on the lifecycle of a customer's checking account. This is a critical path for the application, since it covers most user interactions.
 
-  - **Success Response (201):**
+The following endpoints were covered with exhaustive tests:
 
-    ```json
-    {
-      "accountId": 1,
-      "message": "Account created successfully"
-    }
-    ```
+- `POST /accounts`: Account Creation
+- `POST /account/deposit`: Depositing Funds
+- `POST /account/withdraw`: Withdrawing Funds
+- `POST /account/close`: Account Closure
 
-- **`POST /account/close`**
-  - **Description:** Closes the authenticated user's open bank account.
-  - **Request Body:**
-
-    ```json
-    {
-      "reason": "Closing my account."
-    }
-    ```
-
-  - **Success Response (200):**
-
-    ```json
-    {
-      "accountId": 1,
-      "message": "Account closed successfully"
-    }
-    ```
-
-- **`POST /account/deposit`**
-  - **Description:** Deposits a specified amount into the user's account.
-  - **Request Body:**
-
-    ```json
-    {
-      "amount": 100.50
-    }
-    ```
-
-  - **Success Response (200):**
-
-    ```json
-    {
-      "newBalance": 1100.50,
-      "transactionId": 1,
-      "message": "Deposit successful"
-    }
-    ```
-
-- **`POST /account/withdraw`**
-  - **Description:** Withdraws a specified amount from the user's account. The user must have sufficient funds.
-  - **Request Body:**
-
-    ```json
-    {
-      "amount": 50.00
-    }
-    ```
-
-  - **Success Response (200):**
-
-    ```json
-    {
-      "newBalance": 1050.50,
-      "transactionId": 2,
-      "message": "Withdrawal successful"
-    }
-    ```
-
-- **`POST /account/transfer`**
-  - **Description:** Transfers a specified amount from the user's account to another user's account. The recipient can be identified by their email or phone number.
-  - **Request Body:**
-
-    ```json
-    {
-      "recipient": "recipient@example.com",
-      "amount": 25.00
-    }
-    ```
-
-  - **Success Response (200):**
-
-    ```json
-    {
-      "message": "Transfer successful",
-      "newBalance": 1025.50,
-      "transactionId": 3
-    }
-    ```
+The goal of the test suite is to validate not only the "happy path", but also to test edge cases, invalid inputs, and business rule enforcement.
