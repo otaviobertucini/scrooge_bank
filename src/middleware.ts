@@ -65,6 +65,7 @@ export const isCustomer = (req: Request, res: Response, next: NextFunction) => {
 };
 
 export const errorHandlerMiddleware = (error: any, req: Request, res: Response, next: NextFunction) => {
+  console.log(`🚀 ~ errorHandlerMiddleware ~ error:`, error)
   let statusCode = 500;
   let errorResponse: ErrorResponse = {
     error: 'Internal server error',

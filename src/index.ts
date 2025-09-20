@@ -58,9 +58,14 @@ app.post(
     const sanitizedSsn = validateSsn(ssn);
     const sanitizedPhone = validatePhone(phone);
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
+    const existingUserEmail = await prisma.user.findUnique({ where: { email } });
+    if (existingUserEmail) {
       throw new ConflictError('A user with this email already exists.', 'USER_ALREADY_EXISTS');
+    }
+
+    const existingUserSsn = await prisma.user.findUnique({ where: { ssn: sanitizedSsn } });
+    if (existingUserSsn) {
+      throw new ConflictError('A user with this SSN already exists.', 'USER_ALREADY_EXISTS');
     }
 
     const token = uuidv4();
@@ -79,8 +84,11 @@ app.post(
 const authRouter = Router();
 authRouter.use(authMiddleware);
 
-authRouter.get('/me', (req: Request, res: Response) => {
-  res.status(200).json({ user: req.user });
+authRouter.get('/me', async (req: Request, res: Response) => {
+
+  const account = await accountService.getUserOpenAccount(req.user.id);
+
+  res.status(200).json({ user: req.user, account });
 });
 
 authRouter.get(
