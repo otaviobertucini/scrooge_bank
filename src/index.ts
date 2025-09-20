@@ -21,6 +21,7 @@ import {
 import { asyncHandler } from './utils/asyncHandler.js';
 import { formatAmount } from './utils/formatters.js';
 import { ConflictError } from './utils/errors.js';
+import type { Server } from 'http';
 
 dotenv.config();
 
@@ -88,7 +89,13 @@ authRouter.get('/me', async (req: Request, res: Response) => {
 
   const account = await accountService.getUserOpenAccount(req.user.id);
 
-  res.status(200).json({ user: req.user, account });
+  res.status(200).json({ user: req.user.email, ...(account && {
+    account: {
+      amount: formatAmount(account.amount),
+      type: account.type,
+      status: account.status,
+    }
+  }) });
 });
 
 authRouter.get(
@@ -197,6 +204,11 @@ app.use(authRouter);
 
 app.use(errorHandlerMiddleware);
 
-app.listen(port, () => {
-  console.log(`Server is running at http://localhost:${port}`);
-});
+let server: Server;
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
+  });
+}
+
+export { app, server };
